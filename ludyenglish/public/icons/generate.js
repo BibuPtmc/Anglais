@@ -1,13 +1,13 @@
 const ICONS = {
   192: {
     size: "192x192",
-    path: "/icons/icon-192.png",
-    maskable: "/icons/icon-192-maskable.png",
+    path: "/icons/LearnLogo.png",
+    maskable: "/icons/LogoMaskable.png",
   },
   512: {
     size: "512x512",
-    path: "/icons/icon-512.png",
-    maskable: "/icons/icon-512-maskable.png",
+    path: "/icons/LearnLogo.png",
+    maskable: "/icons/LogoMaskable.png",
   },
 };
 
