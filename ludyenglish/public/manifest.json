@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "LudyEnglish",
+  "short_name": "LudyEnglish",
+  "description": "Révise ton anglais via CSV EN;FR;EG — flashcards, QCM, écriture.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#0ea5e9",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Flashcards", "url": "/#flashcards" },
+    { "name": "QCM", "url": "/#qcm" },
+    { "name": "Écriture", "url": "/#writing" }
+  ]
+}
