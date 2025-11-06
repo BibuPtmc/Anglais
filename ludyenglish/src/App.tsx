@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, Check, HelpCircle, Loader2, RefreshCw, Shuffle, Upload, Volume2, Moon, Sun, Sparkles, RotateCcw, XCircle, Play, Pause, TimerReset } from "lucide-react";
+import { AlertCircle, Check, HelpCircle, Loader2, RefreshCw, Shuffle, Upload, Volume2, Moon, Sun, Sparkles, RotateCcw, XCircle, Play, Pause, TimerReset, X, Info, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
 
@@ -17,8 +17,19 @@ export type Vocab = { EN: string; FR: string; EG?: string };
 type Mode = "flashcards" | "qcm" | "writing";
 type Direction = "FR→EN" | "EN→FR";
 type Phase = "work" | "break";
+type ToastType = "success" | "error" | "info";
+type Toast = { id: number; message: string; type: ToastType };
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+
+// Toast helper functions
+function showToast(message: string, type: ToastType, setToasts: React.Dispatch<React.SetStateAction<Toast[]>>, toastIdRef: React.MutableRefObject<number>) {
+  const id = toastIdRef.current++;
+  setToasts((prev) => [...prev, { id, message, type }]);
+  setTimeout(() => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, 3000);
+}
 
 function speak(text: string, lang: "en" | "fr") {
   try {
@@ -117,6 +128,9 @@ export default function LudyEnglishApp() {
 
   // UI state
   const [loading, setLoading] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [lastAnswerCorrect, setLastAnswerCorrect] = useState<boolean | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   // Load persisted state
   const [mode, setMode] = useState<Mode>(() => localStorage.getItem("ludy:mode") as Mode || "flashcards");
   const [direction, setDirection] = useState<Direction>(() => localStorage.getItem("ludy:direction") as Direction || "FR→EN");
@@ -137,6 +151,7 @@ export default function LudyEnglishApp() {
 
   const fileRef = useRef<HTMLInputElement>(null);
   const defaultCsvLoadedRef = useRef(false);
+  const toastIdRef = useRef(0);
 
   // Design helper
   const glass = "backdrop-blur bg-white/70 dark:bg-white/10 border border-white/60 dark:border-white/10 shadow-lg";
@@ -149,7 +164,10 @@ export default function LudyEnglishApp() {
     defaultCsvLoadedRef.current = true;
     setLoading(true);
     fetch('/default.csv')
-      .then((res) => res.text())
+      .then((res) => {
+        if (!res.ok) throw new Error("Fichier non trouvé");
+        return res.text();
+      })
       .then((text) => {
         Papa.parse(text, {
           delimiter: ";",
@@ -162,13 +180,24 @@ export default function LudyEnglishApp() {
               const row = normalizeRow(r);
               if (row) parsed.push(row);
             }
-            setRows(parsed);
+            if (parsed.length > 0) {
+              setRows(parsed);
+              showToast(`✅ ${parsed.length} mots chargés depuis le fichier par défaut`, "success", setToasts, toastIdRef);
+            } else {
+              showToast("⚠️ Le fichier CSV est vide", "error", setToasts, toastIdRef);
+            }
             setLoading(false);
           },
-          error: () => setLoading(false),
+          error: () => {
+            showToast("❌ Erreur lors du chargement du CSV", "error", setToasts, toastIdRef);
+            setLoading(false);
+          },
         });
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        showToast("❌ Impossible de charger le fichier par défaut", "error", setToasts, toastIdRef);
+        setLoading(false);
+      });
   }, []);
 
   // Save preferences to localStorage
@@ -226,33 +255,127 @@ export default function LudyEnglishApp() {
   function resetSession() { hardResetProgress(); }
 
   function nextCard(correct?: boolean) {
+    setLastAnswerCorrect(correct ?? null);
     setScore((s) => ({ good: s.good + (correct ? 1 : 0), total: s.total + 1 }));
-    setCurrentStreak((cs) => { const ns = correct ? cs + 1 : 0; setBestStreak((bs) => Math.max(bs, ns)); return ns; });
+    setCurrentStreak((cs) => { 
+      const ns = correct ? cs + 1 : 0; 
+      if (ns > 0 && ns % 5 === 0) {
+        showToast(`🔥 Série de ${ns} bonnes réponses !`, "success", setToasts, toastIdRef);
+      }
+      setBestStreak((bs) => Math.max(bs, ns)); 
+      return ns; 
+    });
     if (!correct && current) {
       const key = (v: Vocab) => `${v.EN}__${v.FR}`;
       setWrongRows((wr) => (wr.some((v) => key(v) === key(current)) ? wr : [...wr, current]));
     }
-    setShowBack(false); setAnswer(""); setIndex((i) => clamp(i + 1, 0, Math.max(list.length - 1, 0)));
+    setTimeout(() => {
+      setLastAnswerCorrect(null);
+      setShowBack(false); 
+      setAnswer(""); 
+      setIndex((i) => clamp(i + 1, 0, Math.max(list.length - 1, 0)));
+    }, 800);
   }
 
   function jumpTo(i: number) { setIndex(clamp(i, 0, Math.max(list.length - 1, 0))); setShowBack(false); setAnswer(""); }
 
   function handleParse(file: File) {
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      showToast("❌ Veuillez sélectionner un fichier CSV", "error", setToasts, toastIdRef);
+      return;
+    }
     setLoading(true);
-    Papa.parse(file, { delimiter: ";", header: true, skipEmptyLines: true, encoding: "UTF-8",
+    Papa.parse(file, { 
+      delimiter: ";", 
+      header: true, 
+      skipEmptyLines: true, 
+      encoding: "UTF-8",
       complete: (res) => {
         const parsed: Vocab[] = [];
-        for (const r of res.data as any[]) { const row = normalizeRow(r); if (row) parsed.push(row); }
-        setRows(parsed); setLoading(false);
-      }, error: () => setLoading(false) });
+        for (const r of res.data as any[]) { 
+          const row = normalizeRow(r); 
+          if (row) parsed.push(row); 
+        }
+        if (parsed.length > 0) {
+          setRows(parsed);
+          showToast(`✅ ${parsed.length} mots chargés avec succès !`, "success", setToasts, toastIdRef);
+        } else {
+          showToast("⚠️ Aucun mot valide trouvé dans le fichier", "error", setToasts, toastIdRef);
+        }
+        setLoading(false);
+      }, 
+      error: (err) => {
+        showToast(`❌ Erreur lors du parsing: ${err.message || "Format invalide"}`, "error", setToasts, toastIdRef);
+        setLoading(false);
+      } 
+    });
   }
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleParse(f); }
 
   function handleAnswerSubmit() {
-    if (!current) return; const target = (direction === "FR→EN" ? current.EN : current.FR).trim().toLowerCase();
-    const given = answer.trim().toLowerCase(); nextCard(given === target);
+    if (!current) return; 
+    const target = (direction === "FR→EN" ? current.EN : current.FR).trim().toLowerCase();
+    const given = answer.trim().toLowerCase(); 
+    const isCorrect = given === target;
+    if (isCorrect) {
+      showToast("✅ Bonne réponse !", "success", setToasts, toastIdRef);
+    } else {
+      showToast(`❌ Mauvaise réponse. La bonne réponse était: ${direction === "FR→EN" ? current.EN : current.FR}`, "error", setToasts, toastIdRef);
+    }
+    nextCard(isCorrect);
   }
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Ignore if typing in input
+      if (e.target instanceof HTMLInputElement) {
+        if (e.key === "Enter") return; // Allow Enter in input
+        return;
+      }
+      
+      switch (e.key) {
+        case " ": // Spacebar - toggle answer/show next
+          e.preventDefault();
+          if (mode === "flashcards") {
+            if (showBack) {
+              nextCard();
+            } else {
+              setShowBack(true);
+            }
+          }
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          if (index < list.length - 1) jumpTo(index + 1);
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          if (index > 0) jumpTo(index - 1);
+          break;
+        case "r":
+        case "R":
+          e.preventDefault();
+          setTrainingRows(rows);
+          hardResetProgress();
+          showToast("🔄 Session réinitialisée", "info", setToasts, toastIdRef);
+          break;
+        case "s":
+        case "S":
+          e.preventDefault();
+          setShuffleOn((s) => {
+            const newVal = !s;
+            showToast(newVal ? "🔀 Mélange activé" : "📋 Ordre normal", "info", setToasts, toastIdRef);
+            return newVal;
+          });
+          break;
+      }
+    };
+    
+    window.addEventListener("keydown", handleKeyPress);
+    return () => window.removeEventListener("keydown", handleKeyPress);
+  }, [mode, showBack, index, list.length, rows]);
 
   // Session end confetti
   useEffect(() => {
@@ -284,6 +407,33 @@ export default function LudyEnglishApp() {
 
   return (
     <div className={`${wrapperClass} p-4 sm:p-8`}>
+      {/* Toast notifications */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+        <AnimatePresence>
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, x: 100 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 100 }}
+              className={`${glass} p-4 rounded-lg shadow-lg flex items-center gap-3 ${
+                toast.type === "success" ? "border-l-4 border-emerald-500" :
+                toast.type === "error" ? "border-l-4 border-red-500" :
+                "border-l-4 border-blue-500"
+              }`}
+            >
+              {toast.type === "success" && <CheckCircle2 className="h-5 w-5 text-emerald-500" />}
+              {toast.type === "error" && <AlertCircle className="h-5 w-5 text-red-500" />}
+              {toast.type === "info" && <Info className="h-5 w-5 text-blue-500" />}
+              <p className="text-sm flex-1">{toast.message}</p>
+              <button onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}>
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
       {/* Background blobs */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: isDark ? 0.25 : 0.5, scale: 1 }} transition={{ duration: 0.8 }} className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-gradient-to-br from-indigo-300 to-sky-200 dark:from-slate-700 dark:to-slate-800 blur-3xl" />
@@ -296,9 +446,17 @@ export default function LudyEnglishApp() {
             <Sparkles className="h-6 w-6 text-primary" />
             <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-br from-slate-900 to-slate-600 bg-clip-text text-transparent dark:from-white dark:to-slate-300">LudyEnglish</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="secondary" className="dark:bg-slate-800 dark:text-slate-200">Cartes: {trainingRows.length}</Badge>
             <Badge variant="outline" className="dark:border-slate-700 dark:text-slate-300">Score: {score.good}/{score.total}</Badge>
+            <Button 
+              variant="secondary" 
+              onClick={() => setShowHelp(!showHelp)}
+              className="text-xs"
+              title="Aide et raccourcis clavier"
+            >
+              <HelpCircle className="h-4 w-4 mr-1" /> Aide
+            </Button>
             <Button variant="secondary" onClick={() => setIsDark((v) => !v)} className="ml-2">
               {isDark ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />} {isDark ? "Clair" : "Sombre"}
             </Button>
@@ -314,9 +472,34 @@ export default function LudyEnglishApp() {
               <Badge variant="outline" className="dark:border-slate-700">Meilleure série: {bestStreak}</Badge>
               <Badge variant="secondary" className="dark:bg-slate-800">Précision: {accuracy}%</Badge>
               <Badge variant="outline" className="dark:border-slate-700">Erreurs: {wrongRows.length}</Badge>
-              <div className="ml-auto flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => { setTrainingRows(rows); hardResetProgress(); }}><RotateCcw className="mr-2 h-4 w-4"/>Session complète</Button>
-                <Button size="sm" onClick={() => { if (wrongRows.length>0){ setTrainingRows(wrongRows); hardResetProgress(); } }} disabled={wrongRows.length===0} className="bg-amber-500 hover:bg-amber-600 text-white"><XCircle className="mr-2 h-4 w-4"/>Erreurs uniquement</Button>
+              <div className="ml-auto flex gap-2 flex-wrap">
+                <Button 
+                  size="sm" 
+                  variant="secondary" 
+                  onClick={() => { 
+                    setTrainingRows(rows); 
+                    hardResetProgress(); 
+                    showToast("📚 Session complète chargée", "info", setToasts, toastIdRef);
+                  }}
+                  title="Réviser toutes les cartes"
+                >
+                  <RotateCcw className="mr-2 h-4 w-4"/>Session complète
+                </Button>
+                <Button 
+                  size="sm" 
+                  onClick={() => { 
+                    if (wrongRows.length>0){ 
+                      setTrainingRows(wrongRows); 
+                      hardResetProgress(); 
+                      showToast(`📝 ${wrongRows.length} erreurs à réviser`, "info", setToasts, toastIdRef);
+                    } 
+                  }} 
+                  disabled={wrongRows.length===0} 
+                  className="bg-amber-500 hover:bg-amber-600 text-white"
+                  title="Réviser uniquement les erreurs"
+                >
+                  <XCircle className="mr-2 h-4 w-4"/>Erreurs uniquement ({wrongRows.length})
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -338,20 +521,60 @@ export default function LudyEnglishApp() {
           </Card>
         </div>
 
+        {/* Help Panel */}
+        {showHelp && (
+          <Card className={`${glass} mb-6 border-blue-200 dark:border-blue-800`}>
+            <CardHeader className="pb-2 flex flex-row items-center justify-between">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Info className="h-5 w-5 text-blue-500" />
+                Aide et raccourcis clavier
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowHelp(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="text-sm text-slate-600 dark:text-slate-300 space-y-3">
+              <div>
+                <p className="font-semibold mb-2">Raccourcis clavier :</p>
+                <ul className="space-y-1 ml-4 list-disc">
+                  <li><kbd className="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">Espace</kbd> - Afficher/masquer la réponse (mode flashcards)</li>
+                  <li><kbd className="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">→</kbd> - Carte suivante</li>
+                  <li><kbd className="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">←</kbd> - Carte précédente</li>
+                  <li><kbd className="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">R</kbd> - Recommencer la session</li>
+                  <li><kbd className="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">S</kbd> - Activer/désactiver le mélange</li>
+                </ul>
+              </div>
+              <div>
+                <p className="font-semibold mb-2">Conseils :</p>
+                <ul className="space-y-1 ml-4 list-disc">
+                  <li>Utilisez les boutons audio pour entendre la prononciation</li>
+                  <li>Les erreurs sont automatiquement sauvegardées pour révision</li>
+                  <li>Le mode Pomodoro vous aide à rester concentré</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Import */}
         <Card className={`${glass} mb-6`}> 
           <CardHeader className="pb-2"><CardTitle className="text-lg">Importer un fichier CSV</CardTitle></CardHeader>
           <CardContent>
-            <div onDragOver={(e) => e.preventDefault()} onDrop={handleDrop} className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed p-6 text-center dark:border-white/10">
+            <div onDragOver={(e) => e.preventDefault()} onDrop={handleDrop} className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed p-6 text-center dark:border-white/10 hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors">
               <Upload className="h-6 w-6" />
               <p className="text-sm text-slate-600 dark:text-slate-300">Glisse-dépose ton fichier ici ou</p>
               <div className="flex gap-2">
-                <Input ref={fileRef} type="file" accept=".csv" onChange={(e: React.ChangeEvent<HTMLInputElement>) => e.target.files?.[0] && handleParse(e.target.files[0])} />
+                <Input ref={fileRef} type="file" accept=".csv" onChange={(e: React.ChangeEvent<HTMLInputElement>) => e.target.files?.[0] && handleParse(e.target.files[0])} className="hidden" />
                 <Button className="bg-gradient-to-br from-indigo-500 to-sky-500 text-white hover:opacity-90" onClick={() => fileRef.current?.click()}>Choisir un fichier</Button>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">Format attendu (avec en-têtes): <span className="font-mono">EN;FR;EG</span></p>
               <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1"><AlertCircle className="h-4 w-4" /> Utilise le point-virgule « ; » comme séparateur.</div>
               {loading && (<div className="mt-2 flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" />Chargement…</div>)}
+              {rows.length > 0 && !loading && (
+                <div className="mt-2 text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="h-4 w-4" /> {rows.length} mots chargés
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -411,25 +634,71 @@ export default function LudyEnglishApp() {
                     {/* Flashcards */}
                     {mode === "flashcards" && (
                       <div className="flex flex-col items-center gap-4">
-                        <div className="w-full rounded-3xl bg-white/80 dark:bg-white/10 p-8 text-center shadow-md ring-1 ring-black/5 dark:ring-white/5">
+                        <motion.div 
+                          className={`w-full rounded-3xl bg-white/80 dark:bg-white/10 p-8 text-center shadow-md ring-1 ring-black/5 dark:ring-white/5 transition-colors ${
+                            lastAnswerCorrect === true ? "ring-2 ring-emerald-500" :
+                            lastAnswerCorrect === false ? "ring-2 ring-red-500" : ""
+                          }`}
+                          animate={lastAnswerCorrect !== null ? { scale: [1, 1.02, 1] } : {}}
+                          transition={{ duration: 0.3 }}
+                        >
                           <div className="text-sm uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">Question</div>
                           <div className="text-2xl font-semibold">{direction === "FR→EN" ? current.FR : current.EN}</div>
-                        </div>
-                        <Button variant="outline" className="hover:scale-[1.02] transition" onClick={() => setShowBack((s) => !s)}>{showBack ? "Masquer la réponse" : "Afficher la réponse"}</Button>
+                        </motion.div>
+                        <Button 
+                          variant="outline" 
+                          className="hover:scale-[1.02] transition" 
+                          onClick={() => setShowBack((s) => !s)}
+                          title="Appuyez sur Espace pour afficher/masquer"
+                        >
+                          {showBack ? "Masquer la réponse" : "Afficher la réponse"}
+                          <span className="ml-2 text-xs text-slate-400">(Espace)</span>
+                        </Button>
                         {showBack && (
-                          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="w-full rounded-3xl bg-white/80 dark:bg-white/10 p-8 text-center shadow-md ring-1 ring-black/5 dark:ring-white/5">
+                          <motion.div 
+                            initial={{ opacity: 0, y: 6 }} 
+                            animate={{ opacity: 1, y: 0 }} 
+                            className="w-full rounded-3xl bg-white/80 dark:bg-white/10 p-8 text-center shadow-md ring-1 ring-black/5 dark:ring-white/5"
+                          >
                             <div className="text-sm uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">Réponse</div>
                             <div className="text-2xl font-semibold">{direction === "FR→EN" ? current.EN : current.FR}</div>
                             <div className="mt-3 flex justify-center gap-2">
-                              <Button size="sm" variant="secondary" onClick={() => speak(current.EN, "en")}><Volume2 className="mr-2 h-4 w-4" /> EN</Button>
-                              <Button size="sm" variant="secondary" onClick={() => speak(current.FR, "fr")}><Volume2 className="mr-2 h-4 w-4" /> FR</Button>
+                              <Button 
+                                size="sm" 
+                                variant="secondary" 
+                                onClick={() => speak(current.EN, "en")}
+                                title="Prononcer en anglais"
+                              >
+                                <Volume2 className="mr-2 h-4 w-4" /> EN
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="secondary" 
+                                onClick={() => speak(current.FR, "fr")}
+                                title="Prononcer en français"
+                              >
+                                <Volume2 className="mr-2 h-4 w-4" /> FR
+                              </Button>
                             </div>
                             {!!current.EG && (<div className="mt-3 text-slate-500 dark:text-slate-300 italic text-sm">{current.EG}</div>)}
                           </motion.div>
                         )}
                         <div className="flex gap-2">
-                          <Button onClick={() => nextCard(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Check className="mr-2 h-4 w-4" />Je savais</Button>
-                          <Button variant="secondary" onClick={() => nextCard(false)} className="hover:scale-[1.01] transition"><AlertCircle className="mr-2 h-4 w-4" />Je reverrai</Button>
+                          <Button 
+                            onClick={() => nextCard(true)} 
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            title="Marquer comme connu"
+                          >
+                            <Check className="mr-2 h-4 w-4" />Je savais
+                          </Button>
+                          <Button 
+                            variant="secondary" 
+                            onClick={() => nextCard(false)} 
+                            className="hover:scale-[1.01] transition"
+                            title="Marquer pour révision"
+                          >
+                            <AlertCircle className="mr-2 h-4 w-4" />Je reverrai
+                          </Button>
                         </div>
                       </div>
                     )}
@@ -477,11 +746,44 @@ export default function LudyEnglishApp() {
 
         {/* Nav */}
         <div className="mb-10 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-xs text-slate-600 dark:text-slate-300">Carte {list.length ? index + 1 : 0} / {list.length}</div>
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => { setTrainingRows(rows); hardResetProgress(); }} className="hover:scale-[1.01] transition"><RefreshCw className="mr-2 h-4 w-4" /> Recommencer</Button>
-            <Button variant="secondary" disabled={index <= 0} onClick={() => jumpTo(index - 1)} className="hover:scale-[1.01] transition">Précédent</Button>
-            <Button disabled={index >= list.length - 1 || list.length === 0} onClick={() => jumpTo(index + 1)} className="bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white hover:opacity-90">Suivant</Button>
+          <div className="text-xs text-slate-600 dark:text-slate-300">
+            Carte {list.length ? index + 1 : 0} / {list.length}
+            {list.length > 0 && (
+              <span className="ml-2 text-slate-400">
+                ({Math.round(((index + 1) / list.length) * 100)}%)
+              </span>
+            )}
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <Button 
+              variant="secondary" 
+              onClick={() => { 
+                setTrainingRows(rows); 
+                hardResetProgress(); 
+                showToast("🔄 Session réinitialisée", "info", setToasts, toastIdRef);
+              }} 
+              className="hover:scale-[1.01] transition"
+              title="Raccourci: R"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" /> Recommencer
+            </Button>
+            <Button 
+              variant="secondary" 
+              disabled={index <= 0} 
+              onClick={() => jumpTo(index - 1)} 
+              className="hover:scale-[1.01] transition"
+              title="Raccourci: ←"
+            >
+              ← Précédent
+            </Button>
+            <Button 
+              disabled={index >= list.length - 1 || list.length === 0} 
+              onClick={() => jumpTo(index + 1)} 
+              className="bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white hover:opacity-90"
+              title="Raccourci: →"
+            >
+              Suivant →
+            </Button>
           </div>
         </div>
 
