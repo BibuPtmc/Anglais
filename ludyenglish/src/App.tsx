@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, Check, HelpCircle, Loader2, RefreshCw, Shuffle, Upload, Volume2, Moon, Sun, Sparkles, RotateCcw, XCircle, Play, Pause, TimerReset, X, Info, CheckCircle2 } from "lucide-react";
+import { AlertCircle, Check, HelpCircle, Loader2, RefreshCw, Shuffle, Upload, Volume2, Moon, Sun, Sparkles, RotateCcw, XCircle, Play, Pause, TimerReset, X, Info, CheckCircle2, Star } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
 
@@ -131,6 +131,8 @@ export default function LudyEnglishApp() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [lastAnswerCorrect, setLastAnswerCorrect] = useState<boolean | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [selectedQcmOption, setSelectedQcmOption] = useState<string | null>(null);
+  const [qcmAnswered, setQcmAnswered] = useState(false);
   // Load persisted state
   const [mode, setMode] = useState<Mode>(() => localStorage.getItem("ludy:mode") as Mode || "flashcards");
   const [direction, setDirection] = useState<Direction>(() => localStorage.getItem("ludy:direction") as Direction || "FR→EN");
@@ -217,6 +219,8 @@ export default function LudyEnglishApp() {
     setTrainingRows(rows);
     setWrongRows([]);
     hardResetProgress();
+    setQcmAnswered(false);
+    setSelectedQcmOption(null);
   }, [rows]);
 
   // PWA registration (safe – does NOT modify JSON files)
@@ -249,7 +253,13 @@ export default function LudyEnglishApp() {
   }, [current, list, direction]);
 
   function hardResetProgress() {
-    setIndex(0); setShowBack(false); setAnswer(""); setScore({ good: 0, total: 0 }); setCurrentStreak(0);
+    setIndex(0); 
+    setShowBack(false); 
+    setAnswer(""); 
+    setScore({ good: 0, total: 0 }); 
+    setCurrentStreak(0);
+    setQcmAnswered(false);
+    setSelectedQcmOption(null);
   }
 
   function resetSession() { hardResetProgress(); }
@@ -269,15 +279,43 @@ export default function LudyEnglishApp() {
       const key = (v: Vocab) => `${v.EN}__${v.FR}`;
       setWrongRows((wr) => (wr.some((v) => key(v) === key(current)) ? wr : [...wr, current]));
     }
+    
+    // Confetti pour les bonnes réponses en QCM
+    if (correct && mode === "qcm") {
+      confetti({ 
+        particleCount: 50, 
+        spread: 60, 
+        origin: { y: 0.6 },
+        colors: ['#10b981', '#3b82f6', '#8b5cf6']
+      });
+    }
+    
+    // Pour les modes autres que QCM, réinitialiser immédiatement
+    if (mode !== "qcm") {
+      setQcmAnswered(false);
+      setSelectedQcmOption(null);
+    }
+    
     setTimeout(() => {
       setLastAnswerCorrect(null);
       setShowBack(false); 
-      setAnswer(""); 
+      setAnswer("");
+      // Réinitialiser les états QCM après le délai pour permettre l'affichage visuel
+      if (mode === "qcm") {
+        setQcmAnswered(false);
+        setSelectedQcmOption(null);
+      }
       setIndex((i) => clamp(i + 1, 0, Math.max(list.length - 1, 0)));
-    }, 800);
+    }, mode === "qcm" ? (correct ? 2000 : 3500) : 800);
   }
 
-  function jumpTo(i: number) { setIndex(clamp(i, 0, Math.max(list.length - 1, 0))); setShowBack(false); setAnswer(""); }
+  function jumpTo(i: number) { 
+    setIndex(clamp(i, 0, Math.max(list.length - 1, 0))); 
+    setShowBack(false); 
+    setAnswer(""); 
+    setQcmAnswered(false);
+    setSelectedQcmOption(null);
+  }
 
   function handleParse(file: File) {
     if (!file.name.toLowerCase().endsWith('.csv')) {
@@ -706,14 +744,102 @@ export default function LudyEnglishApp() {
                     {/* QCM */}
                     {mode === "qcm" && (
                       <div className="grid gap-4">
-                        <div className="rounded-3xl bg-white/80 dark:bg-white/10 p-8 shadow-md ring-1 ring-black/5 dark:ring-white/5">
+                        <motion.div 
+                          className={`rounded-3xl bg-white/80 dark:bg-white/10 p-8 shadow-md ring-1 ring-black/5 dark:ring-white/5 transition-all ${
+                            lastAnswerCorrect === true ? "ring-2 ring-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/20" :
+                            lastAnswerCorrect === false ? "ring-2 ring-red-500 bg-red-50/50 dark:bg-red-900/20" : ""
+                          }`}
+                          animate={lastAnswerCorrect !== null ? { scale: [1, 1.02, 1] } : {}}
+                          transition={{ duration: 0.3 }}
+                        >
                           <div className="text-sm uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">Choisis la bonne réponse</div>
                           <div className="text-2xl font-semibold mb-2">{direction === "FR→EN" ? current.FR : current.EN}</div>
-                        </div>
+                          {qcmAnswered && lastAnswerCorrect === false && (
+                            <motion.div 
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-300 dark:border-red-700"
+                            >
+                              <div className="flex items-center gap-2 text-red-700 dark:text-red-300">
+                                <XCircle className="h-4 w-4" />
+                                <span className="text-sm">La bonne réponse était : <span className="font-semibold">{direction === "FR→EN" ? current.EN : current.FR}</span></span>
+                              </div>
+                            </motion.div>
+                          )}
+                          {qcmAnswered && lastAnswerCorrect === true && (
+                            <motion.div 
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-300 dark:border-emerald-700"
+                            >
+                              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300">
+                                <CheckCircle2 className="h-4 w-4" />
+                                <span className="text-sm">Bonne réponse !</span>
+                              </div>
+                            </motion.div>
+                          )}
+                          {!!current.EG && qcmAnswered && (
+                            <motion.div 
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              className="mt-3 text-slate-600 dark:text-slate-300 italic text-sm"
+                            >
+                              💡 {current.EG}
+                            </motion.div>
+                          )}
+                        </motion.div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {qcmOptions.map((opt) => (
-                            <Button key={opt} variant="outline" className="justify-start hover:scale-[1.01] transition" onClick={() => nextCard(opt === (direction === "FR→EN" ? current.EN : current.FR))}>{opt}</Button>
-                          ))}
+                          {qcmOptions.map((opt) => {
+                            const isCorrect = opt === (direction === "FR→EN" ? current.EN : current.FR);
+                            const isSelected = selectedQcmOption === opt;
+                            const showCorrect = qcmAnswered && isCorrect && isSelected;
+                            const showIncorrect = qcmAnswered && isSelected && !isCorrect;
+                            // Mettre en évidence la bonne réponse quand une mauvaise réponse est sélectionnée
+                            // On vérifie qu'une réponse a été donnée, que c'est la bonne réponse, qu'elle n'a pas été sélectionnée,
+                            // ET qu'une mauvaise réponse a été sélectionnée (selectedQcmOption existe mais n'est pas correct)
+                            const hasWrongAnswer = qcmAnswered && selectedQcmOption && selectedQcmOption !== (direction === "FR→EN" ? current.EN : current.FR);
+                            const showCorrectAnswer = qcmAnswered && isCorrect && !isSelected && hasWrongAnswer;
+                            
+                            return (
+                              <motion.div
+                                key={opt}
+                                whileHover={!qcmAnswered ? { scale: 1.02 } : {}}
+                                whileTap={!qcmAnswered ? { scale: 0.98 } : {}}
+                                animate={{}}
+                                transition={{ duration: 0.2 }}
+                              >
+                                <Button 
+                                  variant="outline" 
+                                  className={`justify-start transition-all ${
+                                    showCorrect 
+                                      ? "bg-emerald-500 text-white border-emerald-600" 
+                                      : showIncorrect
+                                      ? "bg-red-500 text-white border-red-600"
+                                      : showCorrectAnswer
+                                      ? "bg-emerald-500 text-white border-emerald-600"
+                                      : qcmAnswered && !isSelected
+                                      ? "opacity-40 cursor-not-allowed"
+                                      : "hover:scale-[1.01]"
+                                  }`}
+                                  disabled={qcmAnswered}
+                                  onClick={() => {
+                                    if (qcmAnswered) return;
+                                    setSelectedQcmOption(opt);
+                                    setQcmAnswered(true);
+                                    const correct = isCorrect;
+                                    nextCard(correct);
+                                  }}
+                                >
+                                  <div className="flex items-center gap-2 w-full">
+                                    {showCorrect && <CheckCircle2 className="h-4 w-4" />}
+                                    {showIncorrect && <XCircle className="h-4 w-4" />}
+                                    {showCorrectAnswer && <CheckCircle2 className="h-4 w-4" />}
+                                    <span className="flex-1 text-left">{opt}</span>
+                                  </div>
+                                </Button>
+                              </motion.div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
