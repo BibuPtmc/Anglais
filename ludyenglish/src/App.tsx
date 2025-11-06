@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
+import { type User } from "firebase/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,8 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
+import Auth from "@/components/Auth";
+import { useUserData } from "@/hooks/useUserData";
 
 // ================= Types =================
 export type Vocab = { EN: string; FR: string; EG?: string };
@@ -160,6 +163,10 @@ function devSelfTest() {
 
 // =============== Component ===============
 export default function LudyEnglishApp() {
+  // Auth & User Data
+  const [user, setUser] = useState<User | null>(null);
+  const { userData, saveUserData } = useUserData(user);
+
   // Data
   const [rows, setRows] = useState<Vocab[]>([]);
   const [trainingRows, setTrainingRows] = useState<Vocab[]>([]); // active session list
@@ -187,6 +194,13 @@ export default function LudyEnglishApp() {
   const [bestStreak, setBestStreak] = useState(
     () => Number(localStorage.getItem("ludy:bestStreak")) || 0
   );
+
+  // Sync bestStreak with user data when user logs in
+  useEffect(() => {
+    if (userData?.bestStreak && userData.bestStreak > bestStreak) {
+      setBestStreak(userData.bestStreak);
+    }
+  }, [userData]);
   const [shuffleOn, setShuffleOn] = useState(
     () => localStorage.getItem("ludy:shuffle") !== "false"
   );
@@ -268,7 +282,11 @@ export default function LudyEnglishApp() {
 
   useEffect(() => {
     localStorage.setItem("ludy:bestStreak", String(bestStreak));
-  }, [bestStreak]);
+    // Save to Firebase if user is logged in
+    if (user && saveUserData) {
+      saveUserData({ bestStreak });
+    }
+  }, [bestStreak, user, saveUserData]);
 
   // Keep session list in sync with rows
   useEffect(() => {
@@ -623,8 +641,8 @@ export default function LudyEnglishApp() {
           </div>
         </header>
 
-        {/* Scoreboard + Pomodoro */}
-        <div className="grid gap-4 sm:grid-cols-2 mb-6">
+        {/* Scoreboard + Pomodoro + Auth */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
           <Card className={`${glass}`}>
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">Scoreboard</CardTitle>
@@ -730,6 +748,9 @@ export default function LudyEnglishApp() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Auth Component */}
+          <Auth onAuthChange={setUser} glass={glass} />
         </div>
 
         {/* Help Panel */}
