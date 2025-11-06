@@ -1,0 +1,40 @@
+{
+    // === Formatage automatique ===
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": true,
+  
+    // === Définit Prettier comme formateur par défaut ===
+    "[javascript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[typescriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[javascriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+  
+    // === ESLint intégré ===
+    "eslint.validate": [
+      "javascript",
+      "javascriptreact",
+      "typescript",
+      "typescriptreact"
+    ],
+    "eslint.alwaysShowStatus": true,
+    "eslint.format.enable": true,
+  
+    // === Si conflit entre Prettier et ESLint ===
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": true
+    },
+  
+    // === Optionnel : améliore la lisibilité ===
+    "editor.rulers": [100],
+    "editor.tabSize": 2
+  
+}
+  

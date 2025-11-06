@@ -136,11 +136,40 @@ export default function LudyEnglishApp() {
   const [timeLeft, setTimeLeft] = useState<number>(WORK);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const defaultCsvLoadedRef = useRef(false);
 
   // Design helper
   const glass = "backdrop-blur bg-white/70 dark:bg-white/10 border border-white/60 dark:border-white/10 shadow-lg";
 
   useEffect(() => { devSelfTest(); }, []);
+
+  // Load default CSV on mount
+  useEffect(() => {
+    if (defaultCsvLoadedRef.current) return;
+    defaultCsvLoadedRef.current = true;
+    setLoading(true);
+    fetch('/default.csv')
+      .then((res) => res.text())
+      .then((text) => {
+        Papa.parse(text, {
+          delimiter: ";",
+          header: true,
+          skipEmptyLines: true,
+          encoding: "UTF-8",
+          complete: (res) => {
+            const parsed: Vocab[] = [];
+            for (const r of res.data as any[]) {
+              const row = normalizeRow(r);
+              if (row) parsed.push(row);
+            }
+            setRows(parsed);
+            setLoading(false);
+          },
+          error: () => setLoading(false),
+        });
+      })
+      .catch(() => setLoading(false));
+  }, []);
 
   // Save preferences to localStorage
   useEffect(() => {
