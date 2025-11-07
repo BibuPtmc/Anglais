@@ -191,16 +191,48 @@ export default function LudyEnglishApp() {
   const [answer, setAnswer] = useState("");
   const [score, setScore] = useState({ good: 0, total: 0 });
   const [currentStreak, setCurrentStreak] = useState(0);
-  const [bestStreak, setBestStreak] = useState(
-    () => Number(localStorage.getItem("ludy:bestStreak")) || 0
-  );
+  const [bestStreak, setBestStreak] = useState(0);  // Initialisé à 0, sera chargé depuis Firebase
 
-  // Sync bestStreak with user data when user logs in
+  // Sync data with Firebase when user logs in (only once)
+  const [hasLoadedUserData, setHasLoadedUserData] = useState(false);
+  
   useEffect(() => {
-    if (userData?.bestStreak && userData.bestStreak > bestStreak) {
-      setBestStreak(userData.bestStreak);
+    if (userData && !hasLoadedUserData) {
+      // Charger les données depuis Firebase une seule fois
+      if (userData.bestStreak !== undefined) {
+        const localBackup = Number(localStorage.getItem("ludy:bestStreak")) || 0;
+        const remote = userData.bestStreak || 0;
+        const resolvedBest = Math.max(localBackup, remote);
+        setBestStreak(resolvedBest);
+        localStorage.setItem("ludy:bestStreak", String(resolvedBest));
+        if (user && saveUserData && resolvedBest > remote) {
+          // Corriger Firebase si un backup local a une valeur plus élevée
+          saveUserData({ bestStreak: resolvedBest });
+        }
+      }
+      if (userData.totalScore) {
+        setScore(userData.totalScore);
+      }
+      if (userData.currentStreak !== undefined) {
+        setCurrentStreak(userData.currentStreak);
+      }
+      if (userData.wrongWords && userData.wrongWords.length > 0) {
+        setWrongRows(userData.wrongWords);
+      }
+      setHasLoadedUserData(true);
     }
-  }, [userData]);
+    // Reset when user logs out
+    if (!user && hasLoadedUserData) {
+      // Réinitialiser toutes les données
+      setScore({ good: 0, total: 0 });
+      setCurrentStreak(0);
+      setBestStreak(0);
+      setWrongRows([]);
+      localStorage.removeItem("ludy:bestStreak");  // Nettoyer localStorage aussi
+      setHasLoadedUserData(false);
+      showToast("👋 Déconnecté - Données réinitialisées", "info", setToasts, toastIdRef);
+    }
+  }, [userData, hasLoadedUserData, user]);
   const [shuffleOn, setShuffleOn] = useState(
     () => localStorage.getItem("ludy:shuffle") !== "false"
   );
@@ -280,13 +312,45 @@ export default function LudyEnglishApp() {
     localStorage.setItem("ludy:theme", isDark ? "dark" : "light");
   }, [mode, direction, shuffleOn, isDark]);
 
+  // Save bestStreak to localStorage and Firebase
   useEffect(() => {
+    // Éviter d'écraser Firebase avec 0 au démarrage:
+    // 1) attendre le chargement des données utilisateur (hasLoadedUserData)
+    // 2) ne sauvegarder que si la valeur locale dépasse la valeur distante
+    if (!user) return;
+    if (!hasLoadedUserData) return;
+    const remoteBest = userData?.bestStreak ?? 0;
+    if (bestStreak <= remoteBest) {
+      // Garder localStorage en phase avec l'affichage
+      localStorage.setItem("ludy:bestStreak", String(bestStreak));
+      return;
+    }
     localStorage.setItem("ludy:bestStreak", String(bestStreak));
-    // Save to Firebase if user is logged in
-    if (user && saveUserData) {
+    if (saveUserData) {
       saveUserData({ bestStreak });
     }
-  }, [bestStreak, user, saveUserData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bestStreak, user, hasLoadedUserData, userData]);
+
+  // Save score and errors to Firebase (only when it changes, not on every render)
+  useEffect(() => {
+    if (user && saveUserData && score.total > 0) {
+      saveUserData({ 
+        totalScore: score,
+        wrongWordsCount: wrongRows.length,
+        wrongWords: wrongRows  // Sauvegarder la liste complète
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [score.good, score.total, wrongRows.length, user]);
+
+  // Save currentStreak to Firebase
+  useEffect(() => {
+    if (user && saveUserData) {
+      saveUserData({ currentStreak });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStreak, user]);
 
   // Keep session list in sync with rows
   useEffect(() => {
@@ -357,7 +421,17 @@ export default function LudyEnglishApp() {
       if (ns > 0 && ns % 5 === 0) {
         showToast(`🔥 Série de ${ns} bonnes réponses !`, "success", setToasts, toastIdRef);
       }
-      setBestStreak((bs) => Math.max(bs, ns));
+      // Mettre à jour la meilleure série et persister immédiatement si record battu
+      setBestStreak((bs) => {
+        const nextBest = Math.max(bs, ns);
+        if (nextBest > bs) {
+          if (user && saveUserData) {
+            // Sauvegarde immédiate du nouveau record pour éviter toute perte
+            saveUserData({ bestStreak: nextBest });
+          }
+        }
+        return nextBest;
+      });
       return ns;
     });
     if (!correct && current) {

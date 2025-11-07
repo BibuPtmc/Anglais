@@ -6,6 +6,9 @@ import { db } from '@/lib/firebase';
 export interface UserData {
   bestStreak: number;
   totalScore: { good: number; total: number };
+  currentStreak: number;
+  wrongWordsCount: number;
+  wrongWords: Array<{ EN: string; FR: string; EG?: string }>;  // Liste complète des erreurs
   lastUpdated: number;
 }
 
@@ -33,6 +36,9 @@ export function useUserData(user: User | null) {
           const newUserData: UserData = {
             bestStreak: 0,
             totalScore: { good: 0, total: 0 },
+            currentStreak: 0,
+            wrongWordsCount: 0,
+            wrongWords: [],
             lastUpdated: Date.now(),
           };
           await setDoc(userDocRef, newUserData);
