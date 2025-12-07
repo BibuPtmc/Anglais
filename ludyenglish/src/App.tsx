@@ -36,6 +36,9 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
+import { onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
+import { auth, googleProvider } from "@/lib/firebase";
+import { useUserData } from "@/hooks/useUserData";
 
 // ================= Types =================
 export type Vocab = { EN: string; FR: string; EG?: string };
@@ -172,6 +175,7 @@ export default function LudyEnglishApp() {
   const [showHelp, setShowHelp] = useState(false);
   const [selectedQcmOption, setSelectedQcmOption] = useState<string | null>(null);
   const [qcmAnswered, setQcmAnswered] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   // Load persisted state
   const [mode, setMode] = useState<Mode>(
     () => (localStorage.getItem("ludy:mode") as Mode) || "flashcards"
@@ -192,6 +196,8 @@ export default function LudyEnglishApp() {
   );
   const [isDark, setIsDark] = useState(() => localStorage.getItem("ludy:theme") === "dark");
 
+  useUserData(user, bestStreak, setBestStreak);
+
   // Pomodoro (25/5)
   const WORK = 25 * 60;
   const BREAK = 5 * 60;
@@ -209,6 +215,13 @@ export default function LudyEnglishApp() {
 
   useEffect(() => {
     devSelfTest();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+    });
+    return () => unsub();
   }, []);
 
   // Load default CSV on mount
@@ -329,6 +342,22 @@ export default function LudyEnglishApp() {
 
   function resetSession() {
     hardResetProgress();
+  }
+
+  async function handleGoogleSignIn() {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (e) {
+      console.warn("Google sign-in failed", e);
+    }
+  }
+
+  async function handleSignOut() {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.warn("Sign-out failed", e);
+    }
   }
 
   function nextCard(correct?: boolean) {
@@ -608,6 +637,23 @@ export default function LudyEnglishApp() {
             <Badge variant="outline" className="dark:border-slate-700 dark:text-slate-300">
               Score: {score.good}/{score.total}
             </Badge>
+            {user ? (
+              <div className="flex items-center gap-2 ml-2">
+                <Badge
+                  variant="secondary"
+                  className="dark:bg-slate-800 dark:text-slate-200 max-w-[160px] truncate"
+                >
+                  {user.email || "Connecté"}
+                </Badge>
+                <Button variant="outline" size="sm" onClick={handleSignOut}>
+                  Déconnexion
+                </Button>
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" onClick={handleGoogleSignIn} className="ml-2">
+                Se connecter avec Google
+              </Button>
+            )}
             <Button
               variant="secondary"
               onClick={() => setShowHelp(!showHelp)}
