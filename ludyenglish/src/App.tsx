@@ -189,6 +189,7 @@ export default function LudyEnglishApp() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [csvs, setCsvs] = useState<UserCsvMeta[]>([]);
   const [loadingCsvs, setLoadingCsvs] = useState(false);
+  const [selectedCsvIds, setSelectedCsvIds] = useState<string[]>([]);
   // Load persisted state
   const [mode, setMode] = useState<Mode>(
     () => (localStorage.getItem("ludy:mode") as Mode) || "flashcards"
@@ -242,6 +243,7 @@ export default function LudyEnglishApp() {
       setFolders([]);
       setSelectedFolderId(null);
       setCsvs([]);
+      setSelectedCsvIds([]);
       return;
     }
     listFolders(user.uid)
@@ -259,6 +261,7 @@ export default function LudyEnglishApp() {
   useEffect(() => {
     if (!user || !selectedFolderId) {
       setCsvs([]);
+      setSelectedCsvIds([]);
       return;
     }
     setLoadingCsvs(true);
@@ -554,6 +557,53 @@ export default function LudyEnglishApp() {
     } catch (e) {
       console.warn("Failed to load CSV", e);
       showToast("❌ Erreur lors du chargement du fichier", "error", setToasts, toastIdRef);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggleSelectedCsv(id: string) {
+    setSelectedCsvIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function handleLoadSelectedCsvs() {
+    if (!user || !selectedFolderId || selectedCsvIds.length === 0) return;
+    setLoading(true);
+    try {
+      const all: Vocab[] = [];
+      for (const id of selectedCsvIds) {
+        const meta = csvs.find((c) => c.id === id);
+        const loaded = await getCsv(user.uid, selectedFolderId, id);
+        if (loaded && loaded.length > 0) {
+          all.push(...loaded);
+        } else if (meta) {
+          console.warn("Empty CSV", meta.name);
+        }
+      }
+      if (all.length > 0) {
+        setRows(all);
+        showToast(
+          `✅ ${all.length} mots chargés depuis ${selectedCsvIds.length} fichier(s)`,
+          "success",
+          setToasts,
+          toastIdRef
+        );
+      } else {
+        showToast(
+          "⚠️ Aucun mot trouvé dans les fichiers sélectionnés",
+          "error",
+          setToasts,
+          toastIdRef
+        );
+      }
+    } catch (e) {
+      console.warn("Failed to load selected CSVs", e);
+      showToast(
+        "❌ Erreur lors du chargement des fichiers sélectionnés",
+        "error",
+        setToasts,
+        toastIdRef
+      );
     } finally {
       setLoading(false);
     }
@@ -1045,18 +1095,32 @@ export default function LudyEnglishApp() {
                   </p>
                 )}
                 {csvs.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {csvs.map((c) => (
-                      <Button
-                        key={c.id}
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleLoadCsv(c.id, c.name)}
-                      >
-                        {c.name} ({c.rowCount})
-                      </Button>
-                    ))}
-                  </div>
+                  <>
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {csvs.map((c) => {
+                        const selected = selectedCsvIds.includes(c.id);
+                        return (
+                          <Button
+                            key={c.id}
+                            size="sm"
+                            variant={selected ? "default" : "outline"}
+                            onClick={() => toggleSelectedCsv(c.id)}
+                          >
+                            {selected ? "✓ " : ""}
+                            {c.name} ({c.rowCount})
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={selectedCsvIds.length === 0 || loading}
+                      onClick={handleLoadSelectedCsvs}
+                    >
+                      Charger les CSV sélectionnés
+                    </Button>
+                  </>
                 )}
               </div>
             )}
