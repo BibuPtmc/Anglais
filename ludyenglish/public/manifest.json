@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "LudyEnglish",
-  "short_name": "LudyEnglish",
+  "name": "LudyLearning",
+  "short_name": "LudyLearning",
   "description": "Révise ton anglais via CSV EN;FR;EG — flashcards, QCM, écriture.",
   "start_url": "/",
   "scope": "/",

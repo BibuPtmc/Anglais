@@ -28,7 +28,6 @@ export async function listFolders(userId: string): Promise<UserFolder[]> {
 }
 
 export async function createFolder(userId: string, name: string): Promise<UserFolder> {
-  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "folder";
   const ref = doc(collection(db, "users", userId, "folders"));
   await setDoc(ref, {
     name,

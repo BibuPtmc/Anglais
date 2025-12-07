@@ -540,30 +540,6 @@ export default function LudyEnglishApp() {
     }
   }
 
-  async function handleLoadCsv(csvId: string, name: string) {
-    if (!user || !selectedFolderId) return;
-    setLoading(true);
-    try {
-      const loaded = await getCsv(user.uid, selectedFolderId, csvId);
-      if (loaded && loaded.length > 0) {
-        setRows(loaded);
-        showToast(
-          `✅ ${loaded.length} mots chargés depuis "${name}"`,
-          "success",
-          setToasts,
-          toastIdRef
-        );
-      } else {
-        showToast("⚠️ Ce fichier est vide ou introuvable", "error", setToasts, toastIdRef);
-      }
-    } catch (e) {
-      console.warn("Failed to load CSV", e);
-      showToast("❌ Erreur lors du chargement du fichier", "error", setToasts, toastIdRef);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleDeleteCsv(id: string, name: string) {
     if (!user || !selectedFolderId) return;
     const ok = window.confirm(`Supprimer le fichier "${name}" ?`);
@@ -814,8 +790,8 @@ export default function LudyEnglishApp() {
         <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="h-6 w-6 text-primary" />
-            <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-br from-slate-900 to-slate-600 bg-clip-text text-transparent dark:from-white dark:to-slate-300">
-              LudyEnglish
+            <h1 className="text-4xl font-extrabold tracking-tight leading-tight pb-1 bg-gradient-to-br from-slate-900 to-slate-600 bg-clip-text text-transparent dark:from-white dark:to-slate-300">
+              LudyLearning
             </h1>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
