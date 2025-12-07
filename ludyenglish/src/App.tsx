@@ -39,6 +39,15 @@ import confetti from "canvas-confetti";
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
 import { useUserData } from "@/hooks/useUserData";
+import {
+  listFolders,
+  createFolder,
+  listCsvs,
+  saveCsv,
+  getCsv,
+  type UserFolder,
+  type UserCsvMeta,
+} from "@/lib/userCollections";
 
 // ================= Types =================
 export type Vocab = { EN: string; FR: string; EG?: string };
@@ -176,6 +185,10 @@ export default function LudyEnglishApp() {
   const [selectedQcmOption, setSelectedQcmOption] = useState<string | null>(null);
   const [qcmAnswered, setQcmAnswered] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+  const [folders, setFolders] = useState<UserFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [csvs, setCsvs] = useState<UserCsvMeta[]>([]);
+  const [loadingCsvs, setLoadingCsvs] = useState(false);
   // Load persisted state
   const [mode, setMode] = useState<Mode>(
     () => (localStorage.getItem("ludy:mode") as Mode) || "flashcards"
@@ -223,6 +236,43 @@ export default function LudyEnglishApp() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setFolders([]);
+      setSelectedFolderId(null);
+      setCsvs([]);
+      return;
+    }
+    listFolders(user.uid)
+      .then((f) => {
+        setFolders(f);
+        if (f.length > 0 && !selectedFolderId) {
+          setSelectedFolderId(f[0].id);
+        }
+      })
+      .catch((e) => {
+        console.warn("Failed to load folders", e);
+      });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !selectedFolderId) {
+      setCsvs([]);
+      return;
+    }
+    setLoadingCsvs(true);
+    listCsvs(user.uid, selectedFolderId)
+      .then((list) => {
+        setCsvs(list);
+      })
+      .catch((e) => {
+        console.warn("Failed to load CSV list", e);
+      })
+      .finally(() => {
+        setLoadingCsvs(false);
+      });
+  }, [user, selectedFolderId]);
 
   // Load default CSV on mount
   useEffect(() => {
@@ -456,6 +506,57 @@ export default function LudyEnglishApp() {
         setLoading(false);
       },
     });
+  }
+
+  async function handleCreateFolder() {
+    if (!user) return;
+    const name = window.prompt("Nom du dossier");
+    if (!name) return;
+    try {
+      const folder = await createFolder(user.uid, name.trim());
+      setFolders((prev) => [...prev, folder]);
+      setSelectedFolderId(folder.id);
+      showToast(`📁 Dossier "${name}" créé`, "success", setToasts, toastIdRef);
+    } catch (e) {
+      console.warn("Failed to create folder", e);
+      showToast("❌ Impossible de créer le dossier", "error", setToasts, toastIdRef);
+    }
+  }
+
+  async function handleSaveCsvToFolder(fileName: string, parsedRows: Vocab[]) {
+    if (!user || !selectedFolderId || parsedRows.length === 0) return;
+    try {
+      await saveCsv(user.uid, selectedFolderId, fileName, parsedRows);
+      listCsvs(user.uid, selectedFolderId)
+        .then((list) => setCsvs(list))
+        .catch(() => {});
+    } catch (e) {
+      console.warn("Failed to save CSV", e);
+    }
+  }
+
+  async function handleLoadCsv(csvId: string, name: string) {
+    if (!user || !selectedFolderId) return;
+    setLoading(true);
+    try {
+      const loaded = await getCsv(user.uid, selectedFolderId, csvId);
+      if (loaded && loaded.length > 0) {
+        setRows(loaded);
+        showToast(
+          `✅ ${loaded.length} mots chargés depuis "${name}"`,
+          "success",
+          setToasts,
+          toastIdRef
+        );
+      } else {
+        showToast("⚠️ Ce fichier est vide ou introuvable", "error", setToasts, toastIdRef);
+      }
+    } catch (e) {
+      console.warn("Failed to load CSV", e);
+      showToast("❌ Erreur lors du chargement du fichier", "error", setToasts, toastIdRef);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
@@ -833,7 +934,49 @@ export default function LudyEnglishApp() {
           <CardHeader className="pb-2">
             <CardTitle className="text-lg">Importer un fichier CSV</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {user ? (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex-1 flex flex-col gap-1">
+                  <Label className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Dossier (optionnel)
+                  </Label>
+                  <div className="flex gap-2 items-center">
+                    <Select
+                      value={selectedFolderId ?? undefined}
+                      onValueChange={(v) => setSelectedFolderId(v)}
+                    >
+                      <SelectTrigger className="bg-white dark:bg-slate-900 w-full sm:w-64">
+                        <SelectValue
+                          placeholder={
+                            folders.length === 0 ? "Aucun dossier" : "Choisir un dossier"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent className="dark:bg-slate-900">
+                        {folders.map((f) => (
+                          <SelectItem key={f.id} value={f.id}>
+                            {f.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" variant="outline" onClick={handleCreateFolder}>
+                      Nouveau dossier
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mt-2 sm:mt-0">
+                  Les CSV importés seront sauvegardés dans le dossier sélectionné pour être
+                  rechargés plus tard.
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Connecte-toi avec Google pour créer des dossiers et sauvegarder tes CSV perso.
+              </p>
+            )}
+
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleDrop}
@@ -848,9 +991,20 @@ export default function LudyEnglishApp() {
                   ref={fileRef}
                   type="file"
                   accept=".csv"
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    e.target.files?.[0] && handleParse(e.target.files[0])
-                  }
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    handleParse(f);
+                    if (user && selectedFolderId) {
+                      // Sauvegarde simple après parsing : on utilise les rows une fois le parsing terminé
+                      // via un petit timeout pour laisser le state se mettre à jour.
+                      setTimeout(() => {
+                        if (rows.length > 0) {
+                          handleSaveCsvToFolder(f.name, rows);
+                        }
+                      }, 500);
+                    }
+                  }}
                   className="hidden"
                 />
                 <Button
@@ -878,6 +1032,34 @@ export default function LudyEnglishApp() {
                 </div>
               )}
             </div>
+
+            {user && selectedFolderId && (
+              <div className="mt-4 text-left">
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2 flex items-center gap-2">
+                  Fichiers sauvegardés dans ce dossier
+                  {loadingCsvs && <Loader2 className="h-3 w-3 animate-spin" />}
+                </p>
+                {csvs.length === 0 && !loadingCsvs && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Aucun CSV sauvegardé pour ce dossier pour le moment.
+                  </p>
+                )}
+                {csvs.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {csvs.map((c) => (
+                      <Button
+                        key={c.id}
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleLoadCsv(c.id, c.name)}
+                      >
+                        {c.name} ({c.rowCount})
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
