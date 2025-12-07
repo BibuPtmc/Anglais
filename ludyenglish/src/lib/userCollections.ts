@@ -1,4 +1,12 @@
-import { collection, doc, getDocs, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+  deleteDoc,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { Vocab } from "@/App";
 
@@ -66,4 +74,22 @@ export async function getCsv(userId: string, folderId: string, csvId: string): P
   if (!snap.exists()) return [];
   const data = snap.data();
   return (data.data as Vocab[]) || [];
+}
+
+export async function deleteCsv(userId: string, folderId: string, csvId: string): Promise<void> {
+  const ref = doc(db, "users", userId, "folders", folderId, "csvs", csvId);
+  await deleteDoc(ref);
+}
+
+export async function deleteFolder(userId: string, folderId: string): Promise<void> {
+  // Supprime d'abord tous les CSV du dossier, puis le dossier lui-même
+  const csvCol = collection(db, "users", userId, "folders", folderId, "csvs");
+  const csvSnap = await getDocs(csvCol);
+  const deletions: Promise<void>[] = [];
+  for (const d of csvSnap.docs) {
+    deletions.push(deleteDoc(d.ref));
+  }
+  await Promise.all(deletions);
+  const folderRef = doc(db, "users", userId, "folders", folderId);
+  await deleteDoc(folderRef);
 }

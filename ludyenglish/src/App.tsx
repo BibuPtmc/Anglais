@@ -45,6 +45,8 @@ import {
   listCsvs,
   saveCsv,
   getCsv,
+  deleteCsv,
+  deleteFolder,
   type UserFolder,
   type UserCsvMeta,
 } from "@/lib/userCollections";
@@ -562,6 +564,41 @@ export default function LudyEnglishApp() {
     }
   }
 
+  async function handleDeleteCsv(id: string, name: string) {
+    if (!user || !selectedFolderId) return;
+    const ok = window.confirm(`Supprimer le fichier "${name}" ?`);
+    if (!ok) return;
+    try {
+      await deleteCsv(user.uid, selectedFolderId, id);
+      setCsvs((prev) => prev.filter((c) => c.id !== id));
+      setSelectedCsvIds((prev) => prev.filter((x) => x !== id));
+      showToast(`🗑️ "${name}" supprimé`, "success", setToasts, toastIdRef);
+    } catch (e) {
+      console.warn("Failed to delete CSV", e);
+      showToast("❌ Impossible de supprimer ce fichier", "error", setToasts, toastIdRef);
+    }
+  }
+
+  async function handleDeleteFolder() {
+    if (!user || !selectedFolderId) return;
+    const folder = folders.find((f) => f.id === selectedFolderId);
+    const name = folder?.name || "ce dossier";
+    const ok = window.confirm(`Supprimer le dossier "${name}" et tous ses CSV ?`);
+    if (!ok) return;
+    try {
+      await deleteFolder(user.uid, selectedFolderId);
+      const remaining = folders.filter((f) => f.id !== selectedFolderId);
+      setFolders(remaining);
+      setCsvs([]);
+      setSelectedCsvIds([]);
+      setSelectedFolderId(remaining[0]?.id ?? null);
+      showToast(`🗑️ Dossier "${name}" supprimé`, "success", setToasts, toastIdRef);
+    } catch (e) {
+      console.warn("Failed to delete folder", e);
+      showToast("❌ Impossible de supprimer ce dossier", "error", setToasts, toastIdRef);
+    }
+  }
+
   function toggleSelectedCsv(id: string) {
     setSelectedCsvIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
@@ -1014,6 +1051,15 @@ export default function LudyEnglishApp() {
                     <Button size="sm" variant="outline" onClick={handleCreateFolder}>
                       Nouveau dossier
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleDeleteFolder}
+                      disabled={!selectedFolderId}
+                      className="text-red-500 hover:text-red-600"
+                    >
+                      Supprimer le dossier
+                    </Button>
                   </div>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mt-2 sm:mt-0">
@@ -1100,15 +1146,25 @@ export default function LudyEnglishApp() {
                       {csvs.map((c) => {
                         const selected = selectedCsvIds.includes(c.id);
                         return (
-                          <Button
-                            key={c.id}
-                            size="sm"
-                            variant={selected ? "default" : "outline"}
-                            onClick={() => toggleSelectedCsv(c.id)}
-                          >
-                            {selected ? "✓ " : ""}
-                            {c.name} ({c.rowCount})
-                          </Button>
+                          <div key={c.id} className="flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant={selected ? "default" : "outline"}
+                              onClick={() => toggleSelectedCsv(c.id)}
+                            >
+                              {selected ? "✓ " : ""}
+                              {c.name} ({c.rowCount})
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-red-500 hover:text-red-600"
+                              onClick={() => handleDeleteCsv(c.id, c.name)}
+                              title="Supprimer ce CSV"
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          </div>
                         );
                       })}
                     </div>
