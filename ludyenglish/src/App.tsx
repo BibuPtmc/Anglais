@@ -272,7 +272,7 @@ export default function LudyEnglishApp() {
         setCsvs(list);
       })
       .catch((e) => {
-        console.warn("Failed to load CSV list", e);
+        console.warn("Failed to load CSV list ", e);
       })
       .finally(() => {
         setLoadingCsvs(false);
