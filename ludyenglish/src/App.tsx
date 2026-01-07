@@ -471,7 +471,7 @@ export default function LudyEnglishApp() {
     setSelectedQcmOption(null);
   }
 
-  function handleParse(file: File) {
+  function handleParse(file: File, onParsed?: (rows: Vocab[]) => void) {
     if (!file.name.toLowerCase().endsWith(".csv")) {
       showToast("❌ Veuillez sélectionner un fichier CSV", "error", setToasts, toastIdRef);
       return;
@@ -490,6 +490,9 @@ export default function LudyEnglishApp() {
         }
         if (parsed.length > 0) {
           setRows(parsed);
+          if (onParsed) {
+            onParsed(parsed);
+          }
           showToast(
             `✅ ${parsed.length} mots chargés avec succès !`,
             "success",
@@ -1066,16 +1069,11 @@ export default function LudyEnglishApp() {
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const f = e.target.files?.[0];
                     if (!f) return;
-                    handleParse(f);
-                    if (user && selectedFolderId) {
-                      // Sauvegarde simple après parsing : on utilise les rows une fois le parsing terminé
-                      // via un petit timeout pour laisser le state se mettre à jour.
-                      setTimeout(() => {
-                        if (rows.length > 0) {
-                          handleSaveCsvToFolder(f.name, rows);
-                        }
-                      }, 500);
-                    }
+                    handleParse(f, (parsed) => {
+                      if (user && selectedFolderId && parsed.length > 0) {
+                        handleSaveCsvToFolder(f.name, parsed);
+                      }
+                    });
                   }}
                   className="hidden"
                 />
